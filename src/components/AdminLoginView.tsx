@@ -80,8 +80,6 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
 
       // Verify credentials
       const inputHash = await computeCredentialsHash(cleanUser, cleanPass);
-
-      // Check against savedHash or fallback default (admin / 1995)
       const defaultHash = await computeCredentialsHash('admin', '1995');
 
       if ((savedHash && inputHash === savedHash) || inputHash === defaultHash) {
@@ -110,7 +108,6 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col justify-between font-sans selection:bg-amber-500 selection:text-stone-950">
-      {/* Header */}
       <header className="border-b border-stone-800/80 bg-stone-900/60 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
@@ -131,7 +128,6 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
         </button>
       </header>
 
-      {/* Center login card */}
       <main className="flex-1 flex items-center justify-center p-4">
         <div 
           className={`bg-stone-900/90 border border-stone-800 rounded-2xl max-w-md w-full p-7 shadow-2xl space-y-6 transition-all ${
@@ -274,7 +270,6 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
         </div>
       </main>
 
-      {/* Bottom Footer */}
       <footer className="border-t border-stone-800/80 bg-stone-950 py-4 px-6 text-center text-xs text-stone-600">
         Receipt Processor Desktop • Private Administrative Portal
       </footer>
