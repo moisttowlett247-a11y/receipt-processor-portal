@@ -1,41 +1,41 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Lock, Unlock, KeyRound, X, Check, AlertCircle, ShieldAlert, Key } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lock, User, KeyRound, X, Check, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { computeCredentialsHash } from '../hashUtils';
 
-interface AdminPinModalProps {
+interface AdminCredentialsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  currentPin: string | null;
-  onChangePin?: (newPin: string) => void;
-  mode?: 'unlock' | 'change';
+  savedHash: string | null;
+  savedUsername: string | null;
+  onUpdateCredentials: (username: string, passwordHash: string) => void;
 }
 
-export const AdminPinModal: React.FC<AdminPinModalProps> = ({
+export const AdminPinModal: React.FC<AdminCredentialsModalProps> = ({
   isOpen,
   onClose,
-  onSuccess,
-  currentPin,
-  onChangePin,
-  mode = 'unlock'
+  savedHash,
+  savedUsername,
+  onUpdateCredentials
 }) => {
-  const [pinInput, setPinInput] = useState('');
-  const [newPinInput, setNewPinInput] = useState('');
-  const [confirmNewPinInput, setConfirmNewPinInput] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newUsername, setNewUsername] = useState(savedUsername || 'admin');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isChanging, setIsChanging] = useState(mode === 'change');
   const [shake, setShake] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setPinInput('');
-      setNewPinInput('');
-      setConfirmNewPinInput('');
+      setCurrentPassword('');
+      setNewUsername(savedUsername || 'admin');
+      setNewPassword('');
+      setConfirmPassword('');
       setErrorMsg(null);
-      setIsChanging(mode === 'change');
-      setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [isOpen, mode]);
+  }, [isOpen, savedUsername]);
 
   if (!isOpen) return null;
 
@@ -43,71 +43,60 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
     setErrorMsg(msg);
     setShake(true);
     setTimeout(() => setShake(false), 500);
-    setPinInput('');
   };
 
-  const handleUnlockSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!pinInput) {
-      triggerError('Please enter the Admin Master PIN');
-      return;
-    }
-
-    const trimmed = pinInput.trim();
-    if (trimmed === currentPin) {
-      onSuccess();
-      onClose();
-    } else {
-      triggerError('Incorrect Master PIN. Access Denied.');
-    }
-  };
-
-  const handleChangePinSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = pinInput.trim();
-    if (trimmed !== currentPin) {
-      triggerError('Current PIN is incorrect');
-      return;
-    }
-    if (newPinInput.length < 4) {
-      triggerError('New PIN must be at least 4 digits');
-      return;
-    }
-    if (newPinInput !== confirmNewPinInput) {
-      triggerError('New PIN and confirmation do not match');
-      return;
-    }
-
-    if (onChangePin) {
-      onChangePin(newPinInput);
-      onClose();
-    }
-  };
-
-  const handleKeypadPress = (val: string) => {
-    if (isChanging) return;
-    if (pinInput.length < 8) {
-      const next = pinInput + val;
-      setPinInput(next);
-      setErrorMsg(null);
-      if (next === currentPin) {
-        setTimeout(() => {
-          onSuccess();
-          onClose();
-        }, 150);
-      }
-    }
-  };
-
-  const handleBackspace = () => {
-    setPinInput(prev => prev.slice(0, -1));
     setErrorMsg(null);
+
+    const cleanUser = (savedUsername || 'admin').trim().toLowerCase();
+    const cleanCurrentPass = currentPassword.trim();
+    const cleanNewUser = newUsername.trim().toLowerCase();
+    const cleanNewPass = newPassword.trim();
+
+    if (!cleanCurrentPass) {
+      triggerError('Please enter your current password.');
+      return;
+    }
+    if (!cleanNewUser) {
+      triggerError('Please enter a valid username.');
+      return;
+    }
+    if (cleanNewPass.length < 6) {
+      triggerError('New password must be at least 6 characters.');
+      return;
+    }
+    if (cleanNewPass !== confirmPassword.trim()) {
+      triggerError('New passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Verify current credentials
+      const currentHash = await computeCredentialsHash(cleanUser, cleanCurrentPass);
+      const defaultHash = await computeCredentialsHash('admin', '1995');
+
+      if ((savedHash && currentHash === savedHash) || currentHash === defaultHash) {
+        // Compute new hash
+        const newHash = await computeCredentialsHash(cleanNewUser, cleanNewPass);
+        onUpdateCredentials(cleanNewUser, newHash);
+        onClose();
+      } else {
+        triggerError('Current password is incorrect.');
+      }
+    } catch {
+      triggerError('Error updating credentials. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
       <div 
-        className={`bg-stone-900 border border-stone-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-5 transition-transform ${
+        className={`bg-stone-900 border border-stone-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 transition-transform ${
           shake ? 'animate-bounce border-rose-500/80' : ''
         }`}
       >
@@ -115,21 +104,21 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Lock className="w-5 h-5" />
+              <KeyRound className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-stone-100">
-                {isChanging ? 'Change Admin Master PIN' : 'Admin PIN Authentication'}
+                Change Admin Credentials
               </h3>
               <p className="text-xs text-stone-400">
-                {isChanging ? 'Set a new master passcode' : 'Restricted Management Console'}
+                Update master login username & password
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
+            className="p-1 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -142,144 +131,88 @@ export const AdminPinModal: React.FC<AdminPinModalProps> = ({
           </div>
         )}
 
-        {!isChanging ? (
-          <form onSubmit={handleUnlockSubmit} className="space-y-4">
-            <div>
-              <label className="text-xs font-medium text-stone-300 block mb-1.5 text-center">
-                Enter Master Admin PIN
-              </label>
-              <div className="relative">
-                <input
-                  ref={inputRef}
-                  type="password"
-                  maxLength={8}
-                  value={pinInput}
-                  onChange={(e) => {
-                    setPinInput(e.target.value);
-                    setErrorMsg(null);
-                  }}
-                  placeholder="••••"
-                  className="w-full text-center text-2xl tracking-[0.5em] font-mono py-2.5 px-4 bg-stone-950 border border-stone-800 rounded-xl text-amber-400 focus:outline-none focus:border-amber-500 shadow-inner"
-                  autoFocus
-                />
-              </div>
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+          <div>
+            <label className="text-stone-300 font-medium block mb-1">Current Password</label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Enter current password"
+              className="w-full font-mono px-3 py-2 bg-stone-950 border border-stone-800 rounded-lg text-stone-200 focus:outline-none focus:border-amber-500"
+              autoFocus
+            />
+          </div>
 
-            {/* Quick Keypad */}
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => handleKeypadPress(num)}
-                  className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-base font-semibold text-stone-200 active:scale-95 transition-all cursor-pointer"
-                >
-                  {num}
-                </button>
-              ))}
+          <div className="h-px bg-stone-800 my-2" />
+
+          <div>
+            <label className="text-stone-300 font-medium block mb-1 flex items-center gap-1.5">
+              <User className="w-3.5 h-3.5 text-stone-400" />
+              New Admin Username
+            </label>
+            <input
+              type="text"
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
+              placeholder="e.g. admin or custom name"
+              className="w-full font-mono px-3 py-2 bg-stone-950 border border-stone-800 rounded-lg text-stone-200 focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-stone-300 font-medium block mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-stone-400" />
+                New Password (min 6 chars)
+              </span>
               <button
                 type="button"
-                onClick={() => setPinInput('')}
-                className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-xs font-semibold text-stone-400 active:scale-95 transition-all cursor-pointer"
+                onClick={() => setShowPassword(!showPassword)}
+                className="text-[11px] text-stone-500 hover:text-stone-300 flex items-center gap-1 cursor-pointer"
               >
-                Clear
+                {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                <span>{showPassword ? 'Hide' : 'Show'}</span>
               </button>
-              <button
-                key="0"
-                type="button"
-                onClick={() => handleKeypadPress('0')}
-                className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-base font-semibold text-stone-200 active:scale-95 transition-all cursor-pointer"
-              >
-                0
-              </button>
-              <button
-                type="button"
-                onClick={handleBackspace}
-                className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-xs font-semibold text-stone-400 active:scale-95 transition-all cursor-pointer"
-              >
-                ⌫
-              </button>
-            </div>
+            </label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter new password"
+              className="w-full font-mono px-3 py-2 bg-stone-950 border border-stone-800 rounded-lg text-stone-200 focus:outline-none focus:border-amber-500"
+            />
+          </div>
 
-            <div className="pt-2 flex flex-col gap-2">
-              <button
-                type="submit"
-                className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 font-semibold text-white rounded-xl text-xs transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Unlock className="w-4 h-4" />
-                Unlock Admin Console
-              </button>
+          <div>
+            <label className="text-stone-300 font-medium block mb-1">Confirm New Password</label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Re-enter new password"
+              className="w-full font-mono px-3 py-2 bg-stone-950 border border-stone-800 rounded-lg text-stone-200 focus:outline-none focus:border-amber-500"
+            />
+          </div>
 
-              <div className="flex items-center justify-end text-[11px] text-stone-500 pt-1">
-                {onChangePin && (
-                  <button
-                    type="button"
-                    onClick={() => setIsChanging(true)}
-                    className="text-amber-400 hover:text-amber-300 underline cursor-pointer"
-                  >
-                    Change Master PIN
-                  </button>
-                )}
-              </div>
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={handleChangePinSubmit} className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-stone-300 block mb-1">Current PIN</label>
-              <input
-                type="password"
-                maxLength={8}
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
-                placeholder="Enter current PIN"
-                className="w-full text-xs font-mono px-3 py-2 bg-stone-950 border border-stone-800 rounded-lg text-stone-200 focus:outline-none focus:border-amber-500"
-                autoFocus
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-stone-300 block mb-1">New PIN (4-8 digits)</label>
-              <input
-                type="password"
-                maxLength={8}
-                value={newPinInput}
-                onChange={(e) => setNewPinInput(e.target.value)}
-                placeholder="Enter new PIN"
-                className="w-full text-xs font-mono px-3 py-2 bg-stone-950 border border-stone-800 rounded-lg text-stone-200 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-stone-300 block mb-1">Confirm New PIN</label>
-              <input
-                type="password"
-                maxLength={8}
-                value={confirmNewPinInput}
-                onChange={(e) => setConfirmNewPinInput(e.target.value)}
-                placeholder="Re-enter new PIN"
-                className="w-full text-xs font-mono px-3 py-2 bg-stone-950 border border-stone-800 rounded-lg text-stone-200 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div className="pt-2 flex justify-between items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsChanging(false)}
-                className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-medium rounded-lg transition-colors cursor-pointer"
-              >
-                Back to Unlock
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg shadow transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Check className="w-3.5 h-3.5" />
-                Save New PIN
-              </button>
-            </div>
-          </form>
-        )}
+          <div className="pt-2 flex justify-between items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold rounded-lg shadow transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>{loading ? 'Saving...' : 'Save Credentials'}</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
