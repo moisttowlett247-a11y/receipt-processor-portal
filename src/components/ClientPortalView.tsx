@@ -1,16 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle2, 
   XCircle, 
   ShieldCheck, 
   KeyRound, 
   Download, 
+  Sparkles, 
   Copy, 
   Check, 
+  RefreshCw, 
   Terminal, 
+  Monitor, 
+  Cpu, 
   Lock, 
   HelpCircle,
   Clock,
+  ExternalLink,
+  ChevronRight,
   Receipt
 } from 'lucide-react';
 import { LicenseKeyRecord } from '../types';
@@ -37,6 +43,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     message?: string;
   } | null>(null);
 
+  const [activeTab, setActiveTab] = useState<'status' | 'setup' | 'faq'>('status');
   const [copiedPip, setCopiedPip] = useState(false);
 
   const handleVerifyKey = (e: React.FormEvent) => {
