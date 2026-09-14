@@ -1,92 +1,116 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Lock, Unlock, ArrowLeft, AlertCircle, ShieldCheck, Check } from 'lucide-react';
+import { Lock, Unlock, ArrowLeft, AlertCircle, ShieldCheck, Check, User, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import { computeCredentialsHash } from '../hashUtils';
 
 interface AdminLoginViewProps {
   onUnlock: () => void;
-  currentPin: string | null;
-  onSetInitialPin?: (newPin: string) => void;
+  savedHash: string | null;
+  onSaveCredentials: (username: string, passwordHash: string) => void;
   onGoToClientPortal: () => void;
 }
 
 export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
   onUnlock,
-  currentPin,
-  onSetInitialPin,
+  savedHash,
+  onSaveCredentials,
   onGoToClientPortal
 }) => {
-  const isInitialSetup = !currentPin;
-  const [pinInput, setPinInput] = useState('');
-  const [confirmPinInput, setConfirmPinInput] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+  const isInitialSetup = !savedHash || isResetting;
+
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+
+  const userInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    userInputRef.current?.focus();
   }, [isInitialSetup]);
 
   const triggerError = (msg: string) => {
     setErrorMsg(msg);
     setShake(true);
     setTimeout(() => setShake(false), 500);
-    setPinInput('');
-    setConfirmPinInput('');
+    setPassword('');
+    setConfirmPassword('');
   };
 
-  const handleUnlockSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-
-    if (isInitialSetup) {
-      if (pinInput.length < 4) {
-        triggerError('PIN must be at least 4 digits');
-        return;
-      }
-      if (pinInput !== confirmPinInput) {
-        triggerError('PINs do not match. Please re-enter.');
-        return;
-      }
-      if (onSetInitialPin) {
-        onSetInitialPin(pinInput);
-      }
-      onUnlock();
-      return;
-    }
-
-    if (!pinInput) {
-      triggerError('Please enter your Master Admin PIN');
-      return;
-    }
-
-    const trimmed = pinInput.trim();
-    if (currentPin && trimmed === currentPin) {
-      onUnlock();
-    } else {
-      triggerError('Incorrect Master PIN. Access Denied.');
-    }
-  };
-
-  const handleKeypadPress = (val: string) => {
-    if (isInitialSetup) return; // Keypad is used for standard unlock
-    if (pinInput.length < 8) {
-      const next = pinInput + val;
-      setPinInput(next);
-      setErrorMsg(null);
-      if (currentPin && next === currentPin) {
-        setTimeout(() => {
-          onUnlock();
-        }, 150);
-      }
-    }
-  };
-
-  const handleBackspace = () => {
-    setPinInput(prev => prev.slice(0, -1));
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setErrorMsg(null);
+
+    const cleanUser = username.trim().toLowerCase();
+    const cleanPass = password.trim();
+
+    if (!cleanUser) {
+      triggerError('Please enter an admin username.');
+      return;
+    }
+    if (!cleanPass) {
+      triggerError('Please enter your admin password.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      if (isInitialSetup) {
+        if (cleanPass.length < 6) {
+          triggerError('Password must be at least 6 characters long.');
+          setLoading(false);
+          return;
+        }
+        if (cleanPass !== confirmPassword.trim()) {
+          triggerError('Passwords do not match. Please re-enter.');
+          setLoading(false);
+          return;
+        }
+
+        const hash = await computeCredentialsHash(cleanUser, cleanPass);
+        onSaveCredentials(cleanUser, hash);
+        setIsResetting(false);
+        onUnlock();
+        return;
+      }
+
+      // Verify credentials
+      const inputHash = await computeCredentialsHash(cleanUser, cleanPass);
+
+      // Check against savedHash or fallback default (admin / 1995)
+      const defaultHash = await computeCredentialsHash('admin', '1995');
+
+      if ((savedHash && inputHash === savedHash) || inputHash === defaultHash) {
+        onUnlock();
+      } else {
+        triggerError('Invalid username or password. Access Denied.');
+      }
+    } catch {
+      triggerError('Cryptographic verification failed. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    try {
+      localStorage.removeItem('receipt_processor_admin_user');
+      localStorage.removeItem('receipt_processor_admin_cred_hash');
+    } catch {}
+    setUsername('');
+    setPassword('');
+    setConfirmPassword('');
+    setErrorMsg(null);
+    setIsResetting(true);
   };
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col justify-between font-sans selection:bg-amber-500 selection:text-stone-950">
-      {/* Top minimal header */}
+      {/* Header */}
       <header className="border-b border-stone-800/80 bg-stone-900/60 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
@@ -110,7 +134,7 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
       {/* Center login card */}
       <main className="flex-1 flex items-center justify-center p-4">
         <div 
-          className={`bg-stone-900/90 border border-stone-800 rounded-2xl max-w-sm w-full p-7 shadow-2xl space-y-6 transition-all ${
+          className={`bg-stone-900/90 border border-stone-800 rounded-2xl max-w-md w-full p-7 shadow-2xl space-y-6 transition-all ${
             shake ? 'animate-bounce border-rose-500/80 ring-2 ring-rose-500/20' : ''
           }`}
         >
@@ -119,12 +143,12 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
               {isInitialSetup ? <ShieldCheck className="w-6 h-6" /> : <Lock className="w-6 h-6" />}
             </div>
             <h2 className="text-lg font-extrabold text-stone-100 tracking-tight">
-              {isInitialSetup ? 'Initialize Master Admin PIN' : 'Admin Master PIN Required'}
+              {isInitialSetup ? 'Initialize Master Admin Account' : 'Admin Authentication Required'}
             </h2>
             <p className="text-xs text-stone-400 leading-relaxed">
               {isInitialSetup 
-                ? 'Create a secret 4-8 digit master PIN to secure your administrative dashboard.'
-                : 'Enter your master authentication PIN to access license management and workstation registry.'}
+                ? 'Create an administrative username and strong password to secure your portal.'
+                : 'Sign in with your master credentials to manage licenses, subscriptions, and sync settings.'}
             </p>
           </div>
 
@@ -135,114 +159,117 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({
             </div>
           )}
 
-          <form onSubmit={handleUnlockSubmit} className="space-y-4">
-            {isInitialSetup ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-stone-300 block mb-1">Set New Master PIN (4-8 digits)</label>
-                  <input
-                    ref={inputRef}
-                    type="password"
-                    maxLength={8}
-                    value={pinInput}
-                    onChange={(e) => {
-                      setPinInput(e.target.value);
-                      setErrorMsg(null);
-                    }}
-                    placeholder="Enter PIN"
-                    className="w-full text-center text-xl tracking-[0.3em] font-mono py-2.5 px-4 bg-stone-950 border border-stone-800 rounded-xl text-amber-400 focus:outline-none focus:border-amber-500 shadow-inner"
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-stone-300 block mb-1">Confirm Master PIN</label>
-                  <input
-                    type="password"
-                    maxLength={8}
-                    value={confirmPinInput}
-                    onChange={(e) => {
-                      setConfirmPinInput(e.target.value);
-                      setErrorMsg(null);
-                    }}
-                    placeholder="Confirm PIN"
-                    className="w-full text-center text-xl tracking-[0.3em] font-mono py-2.5 px-4 bg-stone-950 border border-stone-800 rounded-xl text-amber-400 focus:outline-none focus:border-amber-500 shadow-inner"
-                  />
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-stone-300 block mb-1.5 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-stone-400" />
+                Username
+              </label>
+              <input
+                ref={userInputRef}
+                type="text"
+                value={username}
+                onChange={(e) => {
+                  setUsername(e.target.value);
+                  setErrorMsg(null);
+                }}
+                placeholder={isInitialSetup ? 'e.g. admin or your username' : 'Enter admin username'}
+                className="w-full text-xs font-mono py-2.5 px-3.5 bg-stone-950 border border-stone-800 rounded-xl text-stone-100 placeholder-stone-600 focus:outline-none focus:border-amber-500 shadow-inner"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-stone-300 block mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-stone-400" />
+                  Password
+                </span>
                 <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 font-semibold text-white rounded-xl text-xs transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2 mt-2"
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-[11px] text-stone-500 hover:text-stone-300 flex items-center gap-1 cursor-pointer"
                 >
-                  <Check className="w-4 h-4" />
-                  Save Master PIN & Unlock
+                  {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  <span>{showPassword ? 'Hide' : 'Show'}</span>
                 </button>
+              </label>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setErrorMsg(null);
+                }}
+                placeholder={isInitialSetup ? 'Create strong password (min 6 chars)' : 'Enter admin password'}
+                className="w-full text-xs font-mono py-2.5 px-3.5 bg-stone-950 border border-stone-800 rounded-xl text-stone-100 placeholder-stone-600 focus:outline-none focus:border-amber-500 shadow-inner"
+              />
+            </div>
+
+            {isInitialSetup && (
+              <div>
+                <label className="text-xs font-medium text-stone-300 block mb-1.5 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  Confirm Password
+                </label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    setErrorMsg(null);
+                  }}
+                  placeholder="Re-enter password"
+                  className="w-full text-xs font-mono py-2.5 px-3.5 bg-stone-950 border border-stone-800 rounded-xl text-stone-100 placeholder-stone-600 focus:outline-none focus:border-amber-500 shadow-inner"
+                />
               </div>
-            ) : (
-              <>
-                <div>
-                  <div className="relative">
-                    <input
-                      ref={inputRef}
-                      type="password"
-                      maxLength={8}
-                      value={pinInput}
-                      onChange={(e) => {
-                        setPinInput(e.target.value);
-                        setErrorMsg(null);
-                      }}
-                      placeholder="••••"
-                      className="w-full text-center text-2xl tracking-[0.5em] font-mono py-2.5 px-4 bg-stone-950 border border-stone-800 rounded-xl text-amber-400 focus:outline-none focus:border-amber-500 shadow-inner"
-                      autoFocus
-                    />
-                  </div>
-                </div>
-
-                {/* Numeric Keypad */}
-                <div className="grid grid-cols-3 gap-2">
-                  {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => handleKeypadPress(num)}
-                      className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-base font-semibold text-stone-200 active:scale-95 transition-all cursor-pointer"
-                    >
-                      {num}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setPinInput('')}
-                    className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-xs font-semibold text-stone-400 active:scale-95 transition-all cursor-pointer"
-                  >
-                    Clear
-                  </button>
-                  <button
-                    key="0"
-                    type="button"
-                    onClick={() => handleKeypadPress('0')}
-                    className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-base font-semibold text-stone-200 active:scale-95 transition-all cursor-pointer"
-                  >
-                    0
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleBackspace}
-                    className="py-3 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-800/80 text-xs font-semibold text-stone-400 active:scale-95 transition-all cursor-pointer"
-                  >
-                    ⌫
-                  </button>
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 font-semibold text-white rounded-xl text-xs transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
-                  >
-                    <Unlock className="w-4 h-4" />
-                    Unlock Admin Console
-                  </button>
-                </div>
-              </>
             )}
+
+            <div className="pt-2 space-y-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 font-semibold text-white rounded-xl text-xs transition-all shadow-md active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <span>Verifying...</span>
+                ) : isInitialSetup ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Save Master Account & Unlock</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-4 h-4" />
+                    <span>Sign In to Admin Console</span>
+                  </>
+                )}
+              </button>
+
+              {isInitialSetup && isResetting && (
+                <button
+                  type="button"
+                  onClick={() => setIsResetting(false)}
+                  className="w-full py-1.5 px-3 bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-200 text-xs rounded-xl border border-stone-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+
+              {!isInitialSetup && (
+                <div className="flex items-center justify-between pt-1 text-[11px] text-stone-500">
+                  <span>Default fallback: <code className="text-amber-400/90 font-mono">admin</code> / <code className="text-amber-400/90 font-mono">1995</code></span>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="text-stone-400 hover:text-amber-400 flex items-center gap-1 cursor-pointer transition-colors underline"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Reset Account
+                  </button>
+                </div>
+              )}
+            </div>
           </form>
         </div>
       </main>
